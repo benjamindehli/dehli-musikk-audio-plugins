@@ -1,0 +1,12 @@
+{
+    "name": "dehli-musikk-audio-plugins-tooling",
+    "private": true,
+    "description": "Formatting tools for the docs, the readme and the workflows. The plugins are C++ and CMake and need none of this.",
+    "scripts": {
+        "format": "prettier --write .",
+        "format:check": "prettier --check ."
+    },
+    "devDependencies": {
+        "prettier": "3.9.10"
+    }
+}

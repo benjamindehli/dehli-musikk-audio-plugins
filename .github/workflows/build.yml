@@ -1,0 +1,231 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Every job reads the repository and checks it. Nothing here writes anything.
+permissions:
+  contents: read
+
+# A new push to a pull request cancels the run for the push before it. Pushes
+# to main are left to finish, so each one keeps a result of its own.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+          - name: macOS
+            os: macos-latest
+            # A universal binary is what a release wants and doubles the time
+            # a build takes. The runner's own architecture is enough to test.
+            extra: -DCMAKE_OSX_ARCHITECTURES=arm64
+          - name: Windows
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # xvfb and gdb are for pluginval, which opens the editor and needs a
+      # display, and whose crash on Linux should say where it happened.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        uses: ./.github/actions/linux-deps
+        with:
+          extra-packages: xvfb gdb
+
+      - name: Fetch JUCE
+        id: juce
+        uses: ./.github/actions/fetch-pinned
+        with:
+          name: JUCE
+
+      - name: Fetch dehli-musikk-plugin-core
+        id: core
+        uses: ./.github/actions/fetch-pinned
+        with:
+          name: dm_plugin_core
+
+      - name: Configure
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DDM_INSTALL_AFTER_BUILD=OFF
+          -DDM_WARNINGS_AS_ERRORS=ON
+          -DJUCE_PATH=${{ steps.juce.outputs.path }}
+          -DFETCHCONTENT_SOURCE_DIR_DM_PLUGIN_CORE=${{ steps.core.outputs.path }}
+          ${{ matrix.extra }}
+
+      # Two jobs at a time. A bare -j runs every translation unit at once,
+      # and with link-time optimisation that runs a runner out of memory.
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      # pluginval is a host that misuses a plugin on purpose: odd block sizes,
+      # parameters moved from the wrong thread, state saved and restored mid
+      # render. The VST3 of each, at strictness 8, with the seed Overtonium's
+      # build pins.
+      - name: Fetch pluginval
+        shell: bash
+        run: bash .github/scripts/fetch_pluginval.sh
+
+      - name: Validate the VST3s
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            macOS)   run=(./pluginval.app/Contents/MacOS/pluginval) ;;
+            Windows) run=(./pluginval.exe) ;;
+            Linux)   run=(./pluginval) ;;
+          esac
+
+          failed=0
+
+          for machine in Console Cassette; do
+            vst3=build/${machine}_artefacts/Release/VST3/${machine}.vst3
+            echo "==== $machine"
+
+            if [ "$RUNNER_OS" = "Linux" ]; then
+              # Through gdb, so a crash prints where every thread was.
+              set +e
+              xvfb-run -a gdb --batch --return-child-result \
+                -ex "handle SIGPIPE nostop noprint pass" \
+                -ex run \
+                -ex "thread apply all bt" \
+                --args "${run[@]}" --strictness-level 8 \
+                  --random-seed 0x63cc70f --validate "$vst3" 2>&1 |
+                tee pluginval.log
+              status=${PIPESTATUS[0]}
+              set -e
+
+              # pluginval and Xlib can crash in their own shutdown after every
+              # test has passed, as Overtonium's runs have shown. That is let
+              # through with a warning. A failed test still fails.
+              if [ "$status" -ne 0 ] && grep -qx "SUCCESS" pluginval.log &&
+                ! grep -qE '^!!! Test |\*\*\* FAILED|^FAILURE|tests failed' \
+                  pluginval.log; then
+                echo "::warning::$machine passed every test and pluginval then exited with $status while shutting down."
+                status=0
+              fi
+            else
+              set +e
+              "${run[@]}" --strictness-level 8 --random-seed 0x63cc70f \
+                --validate "$vst3"
+              status=$?
+              set -e
+            fi
+
+            if [ "$status" -ne 0 ]; then
+              echo "::error::pluginval failed $machine"
+              failed=1
+            fi
+          done
+
+          exit "$failed"
+
+  sanitizers:
+    name: Sanitizers
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    # The test again, built with the address and undefined behaviour
+    # sanitizers, which stop at a read past an array or a value the standard
+    # does not define, where a plain build carries on with a plausible number.
+    # The test compiles the plugins' code and the library's, so both are
+    # checked. The log is checked as well as the exit status, since a run can
+    # report something and still exit zero.
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux dependencies
+        timeout-minutes: 10
+        uses: ./.github/actions/linux-deps
+
+      - name: Fetch JUCE
+        id: juce
+        uses: ./.github/actions/fetch-pinned
+        with:
+          name: JUCE
+
+      - name: Fetch dehli-musikk-plugin-core
+        id: core
+        uses: ./.github/actions/fetch-pinned
+        with:
+          name: dm_plugin_core
+
+      - name: Configure
+        env:
+          CFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer
+          CXXFLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer
+          LDFLAGS: -fsanitize=address,undefined
+          ASAN_OPTIONS: detect_leaks=0
+        run: >
+          cmake -B build-san
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DDM_INSTALL_AFTER_BUILD=OFF
+          -DJUCE_PATH=${{ steps.juce.outputs.path }}
+          -DFETCHCONTENT_SOURCE_DIR_DM_PLUGIN_CORE=${{ steps.core.outputs.path }}
+
+      - name: Build
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: cmake --build build-san --parallel 2 --target dm_plugins_test
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+        run: |
+          set +e
+          ./build-san/dm_plugins_test_artefacts/RelWithDebInfo/dm_plugins_test 2>&1 | tee sanitized.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if grep -nE "runtime error:|ERROR: AddressSanitizer|ERROR: LeakSanitizer|SUMMARY: (Address|Undefined)" sanitized.log; then
+            echo "::error::the sanitizers reported the lines above"
+            exit 1
+          fi
+
+          exit "$status"
+
+  format:
+    name: Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Prettier for the docs, the readme and the workflows, and clang-format for
+    # the C++. Both versions are pinned, so this job and a developer format
+    # alike.
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - run: npm run format:check
+
+      - run: pip install clang-format==23.1.1
+
+      - name: The C++ is formatted
+        run: >
+          find Source Tests -name '*.h' -o -name '*.cpp'
+          | xargs clang-format --style=LLVM --dry-run -Werror
