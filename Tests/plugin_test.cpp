@@ -216,6 +216,18 @@ void testDelta(dm::ClipType machine) {
   check(driven > clean + 10.0,
         named(machine, "driven hard, the delta rises (" +
                            std::to_string(driven) + " dB)"));
+
+  // The output level comes before the input is taken off, so turning the
+  // output down 6 dB leaves half the tone less all of it: half the tone, out
+  // of phase. Taken off before the output, it would be 6 dB under the clean
+  // delta instead, as if the output level had no part in what is heard.
+  const auto quieter =
+      gainDb(machine, {{params::deltaId, 1.0f}, {params::outputId, -6.0f}},
+             100.0, -30.0);
+  check(std::abs(quieter + 6.0) < 1.0,
+        named(machine, "with the output 6 dB down, the delta is half the "
+                       "tone (" +
+                           std::to_string(quieter) + " dB)"));
 }
 
 void testCeiling(dm::ClipType machine) {
