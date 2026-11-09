@@ -185,8 +185,10 @@ void MachineProcessor::processChunk(float *left, float *right,
     const auto take = deltaMix.getNextValue();
     const auto out = outputGain.getNextValue();
 
-    left[i] = (left[i] * up - take * dryLeft[(size_t)i]) * out;
-    right[i] = (right[i] * up - take * dryRight[(size_t)i]) * out;
+    // The dry signal comes off what would otherwise be heard, after the
+    // output level, so delta is exactly the output less the input.
+    left[i] = left[i] * up * out - take * dryLeft[(size_t)i];
+    right[i] = right[i] * up * out - take * dryRight[(size_t)i];
   }
 
   outputPeaks.raise(magnitude(left, numSamples), magnitude(right, numSamples));

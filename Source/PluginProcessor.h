@@ -11,7 +11,8 @@
 namespace dm::plugin {
 
 /// One machine from the output stage as a plugin of its own: drive into it,
-/// the machine, then the level out, with the input taken back off for delta.
+/// the machine, then the level out, with the input taken back off that for
+/// delta.
 ///
 /// Console and Cassette are both this class. Which one is given at
 /// construction, so one test program can run both.
