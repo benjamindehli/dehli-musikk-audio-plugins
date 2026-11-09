@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 
+#include <tuple>
+
 #include "Parameters.h"
 
 namespace dm::plugin {
@@ -15,6 +17,15 @@ constexpr int kMargin = 10;
 
 /// How far the window can be made larger than the panel is drawn.
 constexpr double kLargest = 2.0;
+
+/// The two columns, input and output, side by side under the header.
+constexpr int kColumnWidth = 145;
+constexpr int kColumnHeight = 328;
+
+/// The knobs, the meters and the square switches.
+constexpr int kKnobSize = 100;
+constexpr int kMeterWidth = 22;
+constexpr int kSwitchSize = 46;
 } // namespace
 
 juce::Colour machineColour(dm::ClipType machine) {
@@ -36,78 +47,99 @@ juce::Colour machineColour(dm::ClipType machine) {
   return colours::accent;
 }
 
-juce::Rectangle<int> MachineEditor::knobsPocket() {
-  return {kMargin, kHeaderHeight + 8, 196, kHeight - kHeaderHeight - 18};
+juce::Rectangle<int> MachineEditor::inputPocket() {
+  return {kMargin, kHeaderHeight + 8, kColumnWidth, kColumnHeight};
+}
+
+juce::Rectangle<int> MachineEditor::outputPocket() {
+  return inputPocket().withX(kWidth - kMargin - kColumnWidth);
 }
 
 juce::Rectangle<int> MachineEditor::switchesPocket() {
-  const auto knobs = knobsPocket();
-  return knobs.withX(knobs.getRight() + 8).withWidth(112);
+  const auto top = inputPocket().getBottom() + kMargin;
+  return {kMargin, top, kWidth - 2 * kMargin, kHeight - kMargin - top};
 }
 
-juce::Rectangle<int> MachineEditor::metersPocket() {
-  const auto switches = switchesPocket();
-  return switches.withX(switches.getRight() + 8).withRight(kWidth - kMargin);
+juce::Rectangle<int> MachineEditor::captionIn(juce::Rectangle<int> pocket) {
+  return pocket.withTrimmedTop(8).withHeight(14);
+}
+
+void MachineEditor::Look::drawButtonText(juce::Graphics &g,
+                                         juce::TextButton &button, bool, bool) {
+  // As the shared look draws a legend, in the same ink, but sized for a
+  // square switch and free to break onto a second line.
+  g.setFont(dm::ui::makeFont(8.5f, true));
+
+  const auto cap =
+      lampCapBounds(button.getLocalBounds().toFloat(), lampGangOf(button));
+
+  g.setGradientFill(legendInk(lampLegend(), cap, button.getToggleState()));
+
+  g.drawFittedText(button.getButtonText(), cap.toNearestInt().reduced(2),
+                   juce::Justification::centred, 2, 1.0f);
 }
 
 MachineEditor::MachineEditor(MachineProcessor &p)
     : juce::AudioProcessorEditor(p), machineProcessor(p),
       makersMark(dm::ui::logoMakersMark()),
-      driveAttachment(p.apvts, params::driveId, driveKnob.slider),
-      outputAttachment(p.apvts, params::outputId, outputKnob.slider),
-      lookaheadAttachment(p.apvts, params::lookaheadId, lookaheadButton),
+      inputAttachment(p.apvts, params::driveId, inputKnob),
+      outputAttachment(p.apvts, params::outputId, outputKnob),
       autoGainAttachment(p.apvts, params::autoGainId, autoGainButton),
       deltaAttachment(p.apvts, params::deltaId, deltaButton) {
   setLookAndFeel(&lookAndFeel);
 
-  const auto lit = machineColour(p.getMachine());
+  for (auto *knob : {&inputKnob, &outputKnob}) {
+    knob->setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    knob->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
 
-  for (auto *knob : {&driveKnob, &outputKnob}) {
-    knob->slider.setColour(juce::Slider::rotarySliderFillColourId, lit);
+    // All cap and a grey stripe, with no ring of lights round it.
+    knob->setColour(juce::Slider::rotarySliderFillColourId, colours::textDim);
+    knob->getProperties().set("ringless", true);
 
     // Back to 0 dB, which is where both start.
-    knob->slider.setDoubleClickReturnValue(true, 0.0);
-    knob->slider.setPopupDisplayEnabled(true, true, this);
+    knob->setDoubleClickReturnValue(true, 0.0);
+    knob->setPopupDisplayEnabled(true, true, this);
     panel.addAndMakeVisible(*knob);
   }
 
-  driveKnob.slider.setTitle("Drive");
-  driveKnob.slider.setTooltip("How hard the input is driven into the machine");
-  outputKnob.slider.setTitle("Output");
-  outputKnob.slider.setTooltip("The level after the machine");
+  inputKnob.setTitle("Input");
+  inputKnob.setTooltip("How hard the input is driven into the machine");
+  outputKnob.setTitle("Output");
+  outputKnob.setTooltip("The level after the machine");
 
-  for (auto *readout : {&driveReadout, &outputReadout})
+  for (auto *readout : {&inputReadout, &outputReadout}) {
+    readout->setLampColour(looks::readout);
     panel.addAndMakeVisible(*readout);
+  }
 
   const struct {
     dm::ui::GlowButton &button;
     const char *text;
     const char *tip;
-    juce::Colour lamp;
   } switches[] = {
-      {lookaheadButton, "LOOKAHEAD",
-       "The limiter looks 2 ms ahead, which is smoother and adds that much "
-       "latency",
-       colours::accent},
-      {autoGainButton, "AUTO GAIN",
-       "Turns the output down by as much as the drive turns the input up",
-       colours::accent},
+      {autoGainButton, "AUTO\nGAIN",
+       "Turns the output down by as much as the input turns it up"},
       {deltaButton, "DELTA",
-       "Plays only what the machine adds or takes away: the output less the "
-       "input",
-       colours::soloOn},
+       "Plays only what the plugin adds or takes away: the output less the "
+       "input"},
   };
 
   for (const auto &s : switches) {
     s.button.setButtonText(s.text);
     s.button.setTooltip(s.tip);
     s.button.setClickingTogglesState(true);
-    s.button.setColour(juce::TextButton::textColourOnId, s.lamp);
+    s.button.setColour(juce::TextButton::textColourOnId, looks::lamp);
     panel.addAndMakeVisible(s.button);
   }
 
-  for (auto *meter : {&inputMeter, &outputMeter})
+  autoGainButton.setTitle("Auto gain");
+  deltaButton.setTitle("Delta");
+
+  for (auto *meter : {&inputMeter, &outputMeter}) {
+    meter->setVertical(true);
+    meter->setLampColours(looks::meterLow, looks::meterHigh, looks::meterTop);
     panel.addAndMakeVisible(*meter);
+  }
 
   addAndMakeVisible(panel);
 
@@ -133,31 +165,34 @@ MachineEditor::~MachineEditor() {
 void MachineEditor::layOut() {
   panel.setSize(kWidth, kHeight);
 
-  const auto knobs = knobsPocket();
-  const auto knobWidth = (knobs.getWidth() - 12) / 2;
+  for (auto [pocket, knob, readout, meter] :
+       {std::tuple<juce::Rectangle<int>, juce::Component *, juce::Component *,
+                   juce::Component *>{inputPocket(), &inputKnob, &inputReadout,
+                                      &inputMeter},
+        {outputPocket(), &outputKnob, &outputReadout, &outputMeter}}) {
+    auto column =
+        pocket.withTrimmedTop(captionIn(pocket).getBottom() - pocket.getY());
 
-  auto column = knobs.reduced(6, 6);
-  for (auto [knob, readout] : {std::pair<juce::Component *, juce::Component *>{
-                                   &driveKnob, &driveReadout},
-                               {&outputKnob, &outputReadout}}) {
-    auto slot = column.removeFromLeft(knobWidth);
-    knob->setBounds(slot.removeFromTop(104));
-    readout->setBounds(slot.removeFromTop(30).withSizeKeepingCentre(72, 24));
+    column.removeFromTop(4);
+    knob->setBounds(column.removeFromTop(kKnobSize).withSizeKeepingCentre(
+        kKnobSize, kKnobSize));
+
+    column.removeFromTop(6);
+    readout->setBounds(column.removeFromTop(24).withSizeKeepingCentre(76, 24));
+
+    column.removeFromTop(12);
+    meter->setBounds(column.withTrimmedBottom(12).withSizeKeepingCentre(
+        kMeterWidth, column.getHeight() - 12));
   }
 
-  auto switches = switchesPocket().reduced(10, 12);
-  const auto step = switches.getHeight() / 3;
-  for (auto *button : {&lookaheadButton, &autoGainButton, &deltaButton})
-    button->setBounds(
-        switches.removeFromTop(step).withSizeKeepingCentre(92, 26));
-
-  auto meters = metersPocket().reduced(10, 12);
-  const auto half = meters.getHeight() / 2;
-  for (auto *meter : {&inputMeter, &outputMeter}) {
-    auto slot = meters.removeFromTop(half);
-    slot.removeFromTop(22); // the caption
-    meter->setBounds(slot.removeFromTop(16));
-  }
+  // Each switch square, under its own column.
+  const auto row = switchesPocket();
+  for (auto [button, pocket] :
+       {std::pair<juce::Component *, juce::Rectangle<int>>{&autoGainButton,
+                                                           inputPocket()},
+        {&deltaButton, outputPocket()}})
+    button->setBounds(juce::Rectangle<int>(kSwitchSize, kSwitchSize)
+                          .withCentre({pocket.getCentreX(), row.getCentreY()}));
 }
 
 void MachineEditor::resized() {
@@ -174,7 +209,7 @@ void MachineEditor::refresh() {
   outputMeter.push(outL, outR);
 
   const auto &state = machineProcessor.apvts;
-  driveReadout.setReading(
+  inputReadout.setReading(
       params::decibelText(state.getRawParameterValue(params::driveId)->load()),
       true);
   outputReadout.setReading(
@@ -211,21 +246,17 @@ void MachineEditor::Panel::paint(juce::Graphics &g) {
                                       juce::RectanglePlacement::yMid,
                                   0.85f);
 
-  for (const auto &pocket : {knobsPocket(), switchesPocket(), metersPocket()})
+  for (const auto &pocket : {inputPocket(), outputPocket(), switchesPocket()})
     dm::ui::paintGroupPocket(g, pocket);
 
-  // The captions over the two meters.
+  // Each column's name at its top.
   g.setColour(colours::textDim);
-  g.setFont(dm::ui::makeFont(9.0f, true));
+  g.setFont(dm::ui::makeFont(10.0f, true).withExtraKerningFactor(0.08f));
 
-  const auto meters = metersPocket().reduced(10, 12);
-  const auto half = meters.getHeight() / 2;
-  int top = meters.getY();
-  for (const auto *caption : {"IN", "OUT"}) {
-    g.drawText(caption, meters.getX(), top + 4, meters.getWidth(), 14,
-               juce::Justification::centredLeft, false);
-    top += half;
-  }
+  for (auto [pocket, caption] :
+       {std::pair<juce::Rectangle<int>, const char *>{inputPocket(), "INPUT"},
+        {outputPocket(), "OUTPUT"}})
+    g.drawText(caption, captionIn(pocket), juce::Justification::centred, false);
 }
 
 } // namespace dm::plugin

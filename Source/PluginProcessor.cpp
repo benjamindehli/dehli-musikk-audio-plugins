@@ -49,20 +49,13 @@ MachineProcessor::MachineProcessor(dm::ClipType machineToRun)
       machine(machineToRun) {
   drive = apvts.getRawParameterValue(params::driveId);
   output = apvts.getRawParameterValue(params::outputId);
-  lookahead = apvts.getRawParameterValue(params::lookaheadId);
   autoGain = apvts.getRawParameterValue(params::autoGainId);
   delta = apvts.getRawParameterValue(params::deltaId);
 
   // The latency is reported before anything is prepared, at a guessed rate,
   // so a host that asks early gets a figure of the right size.
   setLatencySamples(wantedLatency());
-
-  // Twenty times a second is quick enough that a change of the switch reaches
-  // the host before anyone listens for it.
-  startTimerHz(20);
 }
-
-MachineProcessor::~MachineProcessor() { stopTimer(); }
 
 const juce::String MachineProcessor::getName() const {
   return dm::clipTypeName(machine);
@@ -84,16 +77,7 @@ bool MachineProcessor::isBusesLayoutSupported(const BusesLayout &layout) const {
 
 int MachineProcessor::wantedLatency() const {
   const auto rate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
-  return lookahead->load() > 0.5f ? dm::OutputStage::lookaheadSamples(rate) : 0;
-}
-
-void MachineProcessor::reportLatency() {
-  const auto wanted = wantedLatency();
-
-  // setLatencySamples tells the host only on a change, but asking costs a
-  // lock in some hosts, so it is not asked for nothing.
-  if (wanted != getLatencySamples())
-    setLatencySamples(wanted);
+  return dm::OutputStage::lookaheadSamples(rate);
 }
 
 void MachineProcessor::prepareToPlay(double sampleRate, int maximumBlockSize) {
@@ -130,9 +114,11 @@ void MachineProcessor::prepareToPlay(double sampleRate, int maximumBlockSize) {
   deltaMix.reset(sampleRate, kRampSeconds);
   deltaMix.setCurrentAndTargetValue(delta->load() > 0.5f ? 1.0f : 0.0f);
 
-  // Prepare runs on the host's chosen thread with nothing playing, which is
-  // a safe place to tell it.
-  reportLatency();
+  // The lookahead is always on, so the latency only changes with the rate.
+  // Prepare runs on the host's chosen thread with nothing playing, which is a
+  // safe place to tell it, and setLatencySamples tells the host only on a
+  // change.
+  setLatencySamples(wantedLatency());
 }
 
 void MachineProcessor::delayDry(const float *left, const float *right,
@@ -172,11 +158,14 @@ void MachineProcessor::processChunk(float *left, float *right,
     right[i] *= g;
   }
 
-  stage.process(left, right, numSamples, machine, true,
-                lookahead->load() > 0.5f);
+  // Always shaping, and always with the lookahead, which lets the limiter's
+  // gain move smoothly.
+  constexpr bool shaping = true;
+  constexpr bool ahead = true;
+  stage.process(left, right, numSamples, machine, shaping, ahead);
 
-  // The stage has just taken the switch into account, so its latency is the
-  // one the dry signal has to match, with the deck's own delay on top.
+  // The dry signal has to match the stage's latency, with the deck's own
+  // delay on top.
   delayDry(dryLeft.data(), dryRight.data(), numSamples,
            stage.latency() + machineDelay);
 

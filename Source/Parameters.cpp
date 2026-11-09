@@ -17,7 +17,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout() {
                                 [](float v, int) { return decibelText(v); });
 
   layout.add(std::make_unique<juce::AudioParameterFloat>(
-      juce::ParameterID{driveId, 1}, "Drive",
+      juce::ParameterID{driveId, 1}, "Input",
       juce::NormalisableRange<float>(kDriveMinDb, kDriveMaxDb, 0.1f), 0.0f,
       decibels));
 
@@ -25,9 +25,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout() {
       juce::ParameterID{outputId, 1}, "Output",
       juce::NormalisableRange<float>(kOutputMinDb, kOutputMaxDb, 0.1f), 0.0f,
       decibels));
-
-  layout.add(std::make_unique<juce::AudioParameterBool>(
-      juce::ParameterID{lookaheadId, 1}, "Lookahead", true));
 
   layout.add(std::make_unique<juce::AudioParameterBool>(
       juce::ParameterID{autoGainId, 1}, "Auto gain", false));

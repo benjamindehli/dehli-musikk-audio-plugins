@@ -48,8 +48,8 @@ endif()
 #   -DFETCHCONTENT_SOURCE_DIR_DM_PLUGIN_CORE=../dehli-musikk-plugin-core
 # ------------------------------------------------------------------------------
 FetchContent_Declare(dm_plugin_core
-    URL      https://github.com/benjamindehli/dehli-musikk-plugin-core/archive/e51c8eb536f84d749e434082fb5452105141aa69.tar.gz
-    URL_HASH SHA256=a40881bdf7e10f8252d0334350427f653abc0637432e0f03acb87ab4c5a97a2f)
+    URL      https://github.com/benjamindehli/dehli-musikk-plugin-core/archive/384735b56ab82c8453b75de107b2d62e1eb74326.tar.gz
+    URL_HASH SHA256=9674199e0e405449c3c7d4378e1bb4b6c9d4f447a486d936a33d38abf5610cf6)
 FetchContent_MakeAvailable(dm_plugin_core)
 
 # ------------------------------------------------------------------------------

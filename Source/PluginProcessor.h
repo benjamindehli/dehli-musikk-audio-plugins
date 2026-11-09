@@ -16,11 +16,9 @@ namespace dm::plugin {
 ///
 /// Console and Cassette are both this class. Which one is given at
 /// construction, so one test program can run both.
-class MachineProcessor final : public juce::AudioProcessor,
-                               private juce::Timer {
+class MachineProcessor final : public juce::AudioProcessor {
 public:
   explicit MachineProcessor(dm::ClipType machine);
-  ~MachineProcessor() override;
 
   /// Which machine this is.
   dm::ClipType getMachine() const noexcept { return machine; }
@@ -60,13 +58,7 @@ public:
   void getStateInformation(juce::MemoryBlock &) override;
   void setStateInformation(const void *, int) override;
 
-  /// Tells the host the latency the lookahead switch asks for, if that has
-  /// changed. On the message thread, from a timer, since a host automating the
-  /// switch would move it from the audio thread, which is the wrong thread for
-  /// telling a host its graph has changed. Public for the tests.
-  void reportLatency();
-
-  /// The latency for the switch as it is now, at the prepared rate.
+  /// The lookahead's latency at the prepared rate. Public for the tests.
   int wantedLatency() const;
 
   /// The loudest sample in and out since the editor last asked, per channel.
@@ -83,8 +75,6 @@ public:
   juce::AudioProcessorValueTreeState apvts;
 
 private:
-  void timerCallback() override { reportLatency(); }
-
   /// Processes up to one scratch buffer's worth, which is what prepare sized
   /// everything for. processBlock cuts a bigger block into these.
   void processChunk(float *left, float *right, int numSamples) noexcept;
@@ -99,7 +89,6 @@ private:
 
   std::atomic<float> *drive = nullptr;
   std::atomic<float> *output = nullptr;
-  std::atomic<float> *lookahead = nullptr;
   std::atomic<float> *autoGain = nullptr;
   std::atomic<float> *delta = nullptr;
 

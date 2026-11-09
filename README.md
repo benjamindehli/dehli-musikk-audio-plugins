@@ -9,11 +9,12 @@ Both end in a limiter with its ceiling at -0.1 dBFS, so neither goes past full s
 
 ## The controls
 
-- **Drive**, -12 to +24 dB: how hard the input goes into the machine. Both machines are at unity for a quiet signal, so the drive is what decides how much they do.
-- **Output**, -24 to +12 dB: the level after the machine.
-- **Lookahead**, on by default: the limiter looks 2 ms ahead, which lets its gain move smoothly. The plugin reports that as latency, 96 samples at 48 kHz. Off, there is no latency and the limiter is rougher, though it still holds the ceiling.
-- **Auto gain**: turns the output down by as much as the drive turns the input up, so a quiet signal stays at its level and only what the machine does to a louder one is heard.
-- **Delta**: plays only what the machine adds or takes away, the output less the input, lined up in time. For Cassette that includes the deck's wow and flutter.
+- **Input**, -24 to +24 dB: how hard the input goes into the machine. Both machines are at unity for a quiet signal, so the input level is what decides how much they do.
+- **Output**, -24 to +24 dB: the level after the machine.
+- **Auto gain**: turns the output down by exactly as much as the input turns it up, so a quiet signal stays at its level and only what the machine does to a louder one is heard. Once the machine reaches its ceiling it cannot get any louder, so a loud signal pushed hard comes out quieter than it went in.
+- **Delta**: plays only what the plugin adds or takes away, the output less the input, lined up in time. The output level is part of it, and so is the input level when auto gain is off. For Cassette it includes the deck's wow and flutter.
+
+The limiter always looks 2 ms ahead, which lets its gain move smoothly. The plugin reports that as latency, 96 samples at 48 kHz.
 
 The window can be made up to twice its size. Double-click a knob to put it back at 0 dB.
 
@@ -45,7 +46,7 @@ Warnings are errors by default. Configure with `-DDM_WARNINGS_AS_ERRORS=OFF` if 
 
 ## Tests
 
-`dm_plugins_test` runs both machines with no host and no display. It checks the parameters, the latency, what drive, auto gain, delta and output do to a tone, that full drive into a full-scale tone stays within full scale, the bus layouts, the saved state, bypass, a host that sends bigger blocks than it promised, and the window's controls. `dm_plugins_test --render <folder>` saves both windows as PNG files at 1x and 2x instead.
+`dm_plugins_test` runs both machines with no host and no display. It checks the parameters, the latency, what the input, output, auto gain and delta do to a tone, that the input at full into a full-scale tone stays within full scale, the bus layouts, the saved state, bypass, a host that sends bigger blocks than it promised, and the window's controls. `dm_plugins_test --render <folder>` saves both windows as PNG files at 1x and 2x instead.
 
 CI builds and tests on Linux, macOS and Windows, runs pluginval at strictness 8 on both plugins, runs the test under the address and undefined behaviour sanitizers, and checks the formatting. The C++ is formatted with clang-format 23.1.1 in the stock LLVM style, and the readme and the workflows with the prettier pinned in `package-lock.json`.
 

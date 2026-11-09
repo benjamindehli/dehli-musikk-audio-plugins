@@ -8,19 +8,19 @@ namespace dm::plugin::params {
 /// under these, so they never change.
 inline constexpr const char *driveId = "drive";
 inline constexpr const char *outputId = "output";
-inline constexpr const char *lookaheadId = "lookahead";
 inline constexpr const char *autoGainId = "autoGain";
 inline constexpr const char *deltaId = "delta";
 
 /// How far the input can be pushed into the machine, and pulled back from it.
-inline constexpr float kDriveMinDb = -12.0f;
+/// Shown as Input. The id stays "drive", which sessions already saved use.
+inline constexpr float kDriveMinDb = -24.0f;
 inline constexpr float kDriveMaxDb = 24.0f;
 
 /// The level after the machine.
 inline constexpr float kOutputMinDb = -24.0f;
-inline constexpr float kOutputMaxDb = 12.0f;
+inline constexpr float kOutputMaxDb = 24.0f;
 
-/// All five, in the order a host lists them.
+/// All four, in the order a host lists them.
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
 /// A level as the readouts and the host show it: one decimal, no plus sign.

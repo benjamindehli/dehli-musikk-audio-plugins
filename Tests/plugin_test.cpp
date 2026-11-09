@@ -125,7 +125,6 @@ void testParameters(dm::ClipType machine) {
     float wanted;
   } defaults[] = {{params::driveId, 0.0f},
                   {params::outputId, 0.0f},
-                  {params::lookaheadId, 1.0f},
                   {params::autoGainId, 0.0f},
                   {params::deltaId, 0.0f}};
 
@@ -134,8 +133,18 @@ void testParameters(dm::ClipType machine) {
               1.0e-6f,
           named(machine, std::string(d.id) + " starts where it should"));
 
-  check(p->getParameters().size() == 5,
-        named(machine, "there are five parameters"));
+  check(p->getParameters().size() == 4,
+        named(machine, "there are four parameters"));
+
+  for (const auto *id : {params::driveId, params::outputId}) {
+    const auto range = p->apvts.getParameterRange(id);
+    check(std::abs(range.start + 24.0f) < 1.0e-6f &&
+              std::abs(range.end - 24.0f) < 1.0e-6f,
+          named(machine, std::string(id) + " runs from -24 dB to 24 dB"));
+  }
+
+  check(p->apvts.getParameter(params::driveId)->getName(32) == "Input",
+        named(machine, "the host calls the drive Input, as the window does"));
   check(
       p->apvts.getParameter(params::driveId)
               ->getText(
@@ -149,14 +158,10 @@ void testLatency(dm::ClipType machine) {
   check(p->getLatencySamples() == 96,
         named(machine, "the lookahead reports 96 samples at 48 kHz"));
 
-  set(*p, params::lookaheadId, 0.0f);
-  p->reportLatency();
-  check(p->getLatencySamples() == 0,
-        named(machine, "without it the latency is none"));
-
-  set(*p, params::lookaheadId, 1.0f);
-  p->reportLatency();
-  check(p->getLatencySamples() == 96, named(machine, "and it comes back"));
+  p->setPlayConfigDetails(2, 2, 96000.0, kBlock);
+  p->prepareToPlay(96000.0, kBlock);
+  check(p->getLatencySamples() == 192,
+        named(machine, "and 192 at 96 kHz, the same 2 ms"));
 }
 
 void testLevels(dm::ClipType machine) {
@@ -199,13 +204,6 @@ void testDelta(dm::ClipType machine) {
   check(clean < -12.0,
         named(machine, "the delta of a quiet tone is well below it (" +
                            std::to_string(clean) + " dB)"));
-
-  const auto withoutLookahead =
-      gainDb(machine, {{params::deltaId, 1.0f}, {params::lookaheadId, 0.0f}},
-             100.0, -30.0);
-  check(withoutLookahead < -12.0,
-        named(machine, "and still lines up without the lookahead (" +
-                           std::to_string(withoutLookahead) + " dB)"));
 
   // Driven hard, the machine changes the tone, and the delta is what changed.
   const auto driven = gainDb(machine,
@@ -287,7 +285,6 @@ void testLayouts(dm::ClipType machine) {
 void testState(dm::ClipType machine) {
   auto p = make(machine, {{params::driveId, 7.5f},
                           {params::outputId, -3.0f},
-                          {params::lookaheadId, 0.0f},
                           {params::autoGainId, 1.0f},
                           {params::deltaId, 1.0f}});
 
@@ -298,8 +295,8 @@ void testState(dm::ClipType machine) {
   q->setStateInformation(saved.getData(), (int)saved.getSize());
 
   bool same = true;
-  for (const auto *id : {params::driveId, params::outputId, params::lookaheadId,
-                         params::autoGainId, params::deltaId})
+  for (const auto *id :
+       {params::driveId, params::outputId, params::autoGainId, params::deltaId})
     same =
         same && std::abs(p->apvts.getRawParameterValue(id)->load() -
                          q->apvts.getRawParameterValue(id)->load()) < 1.0e-4f;
@@ -373,21 +370,38 @@ void testEditor(dm::ClipType machine) {
         named(machine, "at the size it is drawn at"));
 
   set(*p, params::driveId, 6.0f);
-  check(std::abs(editor->getDriveKnob().slider.getValue() - 6.0) < 1.0e-3,
-        named(machine, "the drive knob follows its parameter"));
+  check(std::abs(editor->getInputKnob().getValue() - 6.0) < 1.0e-3,
+        named(machine, "the input knob follows its parameter"));
 
-  editor->getOutputKnob().slider.setValue(-4.5, juce::sendNotificationSync);
+  editor->getOutputKnob().setValue(-4.5, juce::sendNotificationSync);
   check(std::abs(p->apvts.getRawParameterValue(params::outputId)->load() +
                  4.5f) < 1.0e-3f,
         named(machine, "the output knob moves its parameter"));
 
   editor->refresh();
-  check(editor->getDriveReadout().getReading() == "6.0" &&
+  check(editor->getInputReadout().getReading() == "6.0" &&
             editor->getOutputReadout().getReading() == "-4.5",
         named(machine, "the readouts show the levels"));
 
-  check(editor->getLookaheadButton().getToggleState(),
-        named(machine, "the lookahead switch is lit, as it starts"));
+  check((bool)editor->getInputKnob().getProperties()["ringless"] &&
+            (bool)editor->getOutputKnob().getProperties()["ringless"],
+        named(machine, "the knobs have no ring of lights"));
+  check(editor->getInputReadout().getLampColour() ==
+                dm::plugin::looks::readout &&
+            editor->getOutputReadout().getLampColour() ==
+                dm::plugin::looks::readout,
+        named(machine, "the readouts are red"));
+  check(editor->getInputMeter().isVertical() &&
+            editor->getOutputMeter().isVertical() &&
+            editor->getInputMeter().getHeight() >
+                editor->getInputMeter().getWidth() * 4,
+        named(machine, "the meters stand"));
+  check(editor->getAutoGainButton().getWidth() ==
+                editor->getAutoGainButton().getHeight() &&
+            editor->getDeltaButton().getBounds() ==
+                editor->getAutoGainButton().getBounds().withX(
+                    editor->getDeltaButton().getX()),
+        named(machine, "the switches are square and side by side"));
 
   // As a click does, but at once, since no message loop runs here.
   editor->getDeltaButton().setToggleState(true, juce::sendNotificationSync);
@@ -414,7 +428,9 @@ int renderWindows(const juce::File &folder) {
   }
 
   for (const auto machine : {dm::ClipType::Console, dm::ClipType::Cassette}) {
-    auto p = make(machine, {{params::driveId, 6.0f}});
+    // Auto gain on, so a lit switch shows beside an unlit one.
+    auto p =
+        make(machine, {{params::driveId, 6.0f}, {params::autoGainId, 1.0f}});
 
     // Some signal, so the meters show something.
     auto buffer = tone(220.0, -9.0, 4096);
