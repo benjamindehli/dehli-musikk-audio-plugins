@@ -234,11 +234,28 @@ void MachineEditor::Panel::paint(juce::Graphics &g) {
   dm::ui::paintGrain(g, bounds);
 
   const auto name =
-      juce::String(dm::clipTypeName(editor.machineProcessor.getMachine()));
+      juce::String(dm::clipTypeName(editor.machineProcessor.getMachine()))
+          .toUpperCase();
+  const auto nameFont =
+      dm::ui::makeFont(20.0f, true).withExtraKerningFactor(0.12f);
+  const auto nameArea = header.reduced(kMargin + 4, 0);
   g.setColour(machineColour(editor.machineProcessor.getMachine()));
-  g.setFont(dm::ui::makeFont(20.0f, true).withExtraKerningFactor(0.12f));
-  g.drawText(name.toUpperCase(), header.reduced(kMargin + 4, 0),
-             juce::Justification::centredLeft, false);
+  g.setFont(nameFont);
+  g.drawText(name, nameArea, juce::Justification::centredLeft, false);
+
+  // The version after the name, small and dim, on the name's baseline, so it
+  // can be read off when reporting a problem.
+  const auto versionFont =
+      dm::ui::makeFont(11.0f, false).withExtraKerningFactor(0.08f);
+  const auto baseline = (float)nameArea.getCentreY() +
+                        (nameFont.getAscent() - nameFont.getDescent()) / 2.0f;
+  const auto versionX = (float)nameArea.getX() +
+                        juce::GlyphArrangement::getStringWidth(nameFont, name) +
+                        8.0f;
+  g.setColour(colours::textDim);
+  g.setFont(versionFont);
+  g.drawSingleLineText(DM_PLUGINS_VERSION, juce::roundToInt(versionX),
+                       juce::roundToInt(baseline));
 
   if (editor.makersMark != nullptr)
     editor.makersMark->drawWithin(g, header.reduced(kMargin + 2, 10).toFloat(),
