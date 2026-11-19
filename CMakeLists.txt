@@ -24,7 +24,7 @@ endif()
 include(FetchContent)
 
 # ------------------------------------------------------------------------------
-# JUCE 9.0.5, fetched as the archive of the commit its tag points to and checked
+# JUCE 9.0.6, fetched as the archive of the commit its tag points to and checked
 # against that archive's hash. Point -DJUCE_PATH at a checkout to skip the
 # download.
 # ------------------------------------------------------------------------------
@@ -34,8 +34,8 @@ if(JUCE_PATH)
     add_subdirectory("${JUCE_PATH}" JUCE)
 else()
     FetchContent_Declare(JUCE
-        URL      https://github.com/juce-framework/JUCE/archive/d60b7a78030661574a615b586d9325ba7a7fa7dd.tar.gz
-        URL_HASH SHA256=8237b2976871982eb9107fd67b576d95bf02355d99540a0127c4e7c001ecd9f5)
+        URL      https://github.com/juce-framework/JUCE/archive/654bdbc7a9db0dae90849b44abe91f339e9f0768.tar.gz
+        URL_HASH SHA256=152ac7a137bf738454ee49309ae969d0ae3abdeef7ebf1fb0c479c1f9ccc39b9)
     FetchContent_MakeAvailable(JUCE)
 endif()
 
@@ -81,7 +81,7 @@ function(dm_set_warnings_as_errors target)
     endif()
 endfunction()
 
-# JUCE 9.0.5's alert window code takes a reference through a temporary that
+# JUCE's alert window code takes a reference through a temporary that
 # GCC 13 and newer warn about, though it is sound. Silenced for that one JUCE
 # file on GCC, and our own code keeps the check.
 if(DM_WARNINGS_AS_ERRORS AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
