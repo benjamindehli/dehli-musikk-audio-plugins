@@ -309,6 +309,40 @@ void testState(dm::ClipType machine) {
   check(std::abs(q->apvts.getRawParameterValue(params::driveId)->load() -
                  7.5f) < 1.0e-4f,
         named(machine, "a state it cannot read leaves the parameters alone"));
+
+  // A value that is not a number, from a damaged or hand-edited session, is
+  // restored as the default. NaN is the one value the range clamps let
+  // through.
+  auto xml = p->apvts.copyState().createXml();
+  int poisoned = 0;
+  for (auto *child : xml->getChildIterator())
+    if (child->hasAttribute("value")) {
+      child->setAttribute("value", "nan");
+      ++poisoned;
+    }
+  juce::MemoryBlock poison;
+  juce::AudioProcessor::copyXmlToBinary(*xml, poison);
+  auto r = make(machine);
+  r->setStateInformation(poison.getData(), (int)poison.getSize());
+
+  bool defaults = poisoned > 0;
+  for (auto *parameter : r->getParameters())
+    defaults = defaults && std::isfinite(parameter->getValue()) &&
+               std::abs(parameter->getValue() - parameter->getDefaultValue()) <
+                   1.0e-6f;
+  check(defaults,
+        named(machine, "a saved value that is not a number comes back as the "
+                       "default"));
+
+  // Still passes sound, rather than merely staying finite.
+  auto buffer = tone(440.0, -12.0, kBlock * 8);
+  render(*r, buffer);
+  bool finite = true;
+  for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
+      finite = finite && std::isfinite(buffer.getSample(ch, i));
+  check(finite && buffer.getMagnitude(kBlock * 4, kBlock * 4) > 0.05f,
+        named(machine, "and the machine still plays"));
 }
 
 void testBypass(dm::ClipType machine) {

@@ -244,8 +244,25 @@ void MachineProcessor::getStateInformation(juce::MemoryBlock &destination) {
 void MachineProcessor::setStateInformation(const void *data, int size) {
   const auto xml = getXmlFromBinary(data, size);
 
-  if (xml != nullptr && xml->hasTagName(apvts.state.getType()))
-    apvts.replaceState(juce::ValueTree::fromXml(*xml));
+  if (xml == nullptr || !xml->hasTagName(apvts.state.getType()))
+    return;
+
+  auto tree = juce::ValueTree::fromXml(*xml);
+
+  // A value that is not a number, from a damaged or hand-edited session, goes
+  // back to its parameter's default before anything reads it. NaN is the one
+  // value the parameters' range clamps let through, and replaceState hands it
+  // straight on, so the host would show and save NaN.
+  for (auto child : tree)
+    if (child.hasProperty("value") &&
+        !std::isfinite((double)child.getProperty("value")))
+      if (auto *ranged = dynamic_cast<juce::RangedAudioParameter *>(
+              apvts.getParameter(child.getProperty("id").toString())))
+        child.setProperty("value",
+                          ranged->convertFrom0to1(ranged->getDefaultValue()),
+                          nullptr);
+
+  apvts.replaceState(tree);
 }
 
 } // namespace dm::plugin
